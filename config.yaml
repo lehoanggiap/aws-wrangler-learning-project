@@ -1,0 +1,33 @@
+# AWS Configuration
+aws:
+  region: "us-east-1"
+  s3_bucket: "your-learning-bucket-name"  # Change this to your bucket name
+  
+# S3 Paths (similar to the actual system)
+s3_paths:
+  news_data: "data/news/"
+  news_parquet: "data/db/db_latest/df_all_news.parquet"
+  database_backup: "data/db/backup/users.sqlite"
+  models: "models/latest/"
+
+# Database Configuration
+database:
+  sqlite_path: "./data/users.sqlite"
+  backup_interval_minutes: 5
+
+# Data Generation Settings
+data_generation:
+  num_articles: 1000
+  companies: ["Microsoft", "Google", "Apple", "Amazon", "Tesla", "Meta", "Netflix"]
+  categories: ["Technology", "Business", "Finance", "AI", "Cloud", "Security"]
+  
+# API Configuration
+api:
+  host: "0.0.0.0"
+  port: 8000
+  reload: true
+  
+# Background Tasks
+background_tasks:
+  data_refresh_hours: 6
+  db_sync_minutes: 5 
