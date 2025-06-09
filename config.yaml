@@ -1,7 +1,7 @@
 # AWS Configuration
 aws:
   region: "us-east-1"
-  s3_bucket: "your-learning-bucket-name"  # Change this to your bucket name
+  s3_bucket: "yaki-aws-wrangler-learning-20241209"  # Unique bucket name
   
 # S3 Paths (similar to the actual system)
 s3_paths:
@@ -30,4 +30,6 @@ api:
 # Background Tasks
 background_tasks:
   data_refresh_hours: 6
-  db_sync_minutes: 5 
+  db_sync_minutes: 5
+  data_refresh_interval: 21600  # 6 hours in seconds
+  db_sync_interval: 300         # 5 minutes in seconds 

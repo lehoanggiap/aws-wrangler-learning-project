@@ -15,6 +15,12 @@ import sqlite3
 import os
 from typing import Optional, List
 import logging
+import uvicorn
+from contextlib import asynccontextmanager
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -26,10 +32,45 @@ last_refresh = None
 config = None
 aws_session = None
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan events"""
+    # Startup
+    logger.info("Starting AWS Wrangler News API Demo...")
+    
+    # Load configuration
+    load_config()
+    
+    # Setup AWS session
+    if not setup_aws_session():
+        logger.warning("AWS session setup failed, using local data only")
+    
+    # Setup database
+    setup_database()
+    
+    # Load initial data
+    success = await load_news_data_from_s3()
+    if not success:
+        logger.warning("Failed to load data, some endpoints may not work")
+    
+    # Start background tasks
+    if aws_session:
+        print('Starting background tasks')
+        asyncio.create_task(background_data_refresh())
+        asyncio.create_task(background_db_sync())
+    
+    logger.info("Application startup completed")
+    
+    yield
+    
+    # Shutdown (if needed)
+    logger.info("Application shutting down...")
+
 app = FastAPI(
     title="AWS Wrangler News API Demo",
     description="Learning project demonstrating AWS Wrangler operations",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 def load_config():
@@ -43,8 +84,33 @@ def setup_aws_session():
     """Setup AWS session for data operations"""
     global aws_session
     try:
-        aws_session = boto3.Session(region_name=config['aws']['region'])
-        logger.info("AWS session initialized successfully")
+        # Get AWS credentials from environment variables
+        aws_access_key_id = os.getenv('AWS_ACCESS_KEY_ID')
+        aws_secret_access_key = os.getenv('AWS_SECRET_ACCESS_KEY')
+        aws_region = os.getenv('AWS_DEFAULT_REGION', config['aws']['region'])
+
+        print(f"AWS Access Key ID: {aws_access_key_id}")
+        print(f"AWS Secret Access Key: {aws_secret_access_key}")
+        print(f"AWS Region: {aws_region}")
+        
+        # Create session with explicit credentials
+        if aws_access_key_id and aws_secret_access_key:
+            aws_session = boto3.Session(
+                aws_access_key_id=aws_access_key_id,
+                aws_secret_access_key=aws_secret_access_key,
+                region_name=aws_region
+            )
+            logger.info("AWS session initialized with environment credentials")
+        else:
+            # Fallback to default credential chain
+            aws_session = boto3.Session(region_name=aws_region)
+            logger.info("AWS session initialized with default credentials")
+        
+        # Test the session by listing S3 buckets
+        s3_client = aws_session.client('s3')
+        s3_client.list_buckets()
+        logger.info("AWS credentials validated successfully")
+        
         return True
     except Exception as e:
         logger.error(f"Failed to setup AWS session: {e}")
@@ -171,6 +237,7 @@ async def background_data_refresh():
             await load_news_data_from_s3()
         except Exception as e:
             logger.error(f"Background refresh failed: {e}")
+            break
 
 async def background_db_sync():
     """Background task to sync database periodically"""
@@ -181,33 +248,7 @@ async def background_db_sync():
             await sync_database_to_s3()
         except Exception as e:
             logger.error(f"Background sync failed: {e}")
-
-@app.on_event("startup")
-async def startup_event():
-    """Initialize application on startup"""
-    logger.info("Starting AWS Wrangler News API Demo...")
-    
-    # Load configuration
-    load_config()
-    
-    # Setup AWS session
-    if not setup_aws_session():
-        logger.warning("AWS session setup failed, using local data only")
-    
-    # Setup database
-    setup_database()
-    
-    # Load initial data
-    success = await load_news_data_from_s3()
-    if not success:
-        logger.warning("Failed to load data, some endpoints may not work")
-    
-    # Start background tasks
-    if aws_session:
-        asyncio.create_task(background_data_refresh())
-        asyncio.create_task(background_db_sync())
-    
-    logger.info("Application startup completed")
+            break
 
 @app.get("/")
 async def root():
@@ -406,7 +447,7 @@ async def get_users():
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
 if __name__ == "__main__":
-    import uvicorn
+    print('Run the app')
     uvicorn.run(
         app, 
         host=config['api']['host'] if config else "0.0.0.0",
