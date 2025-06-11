@@ -1,0 +1,152 @@
+name: Deploy FastAPI to ECS
+
+on:
+  workflow_dispatch: # Allow manual triggering
+
+env:
+  NODE_VERSION: '20'
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  deploy:
+    name: Deploy to ECS
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Verify AWS credentials
+        run: |
+          aws sts get-caller-identity
+          echo "✅ AWS credentials configured successfully"
+
+      - name: Set up Node.js for CDK
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: infrastructure/package-lock.json
+
+      - name: Set up Python for CDK
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install CDK CLI
+        run: |
+          npm install -g aws-cdk@latest
+          cdk --version
+
+      - name: Install CDK dependencies
+        working-directory: infrastructure
+        run: |
+          # Install Python dependencies for CDK
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: CDK Bootstrap (if needed)
+        working-directory: infrastructure
+        run: |
+          echo "🔍 Checking if CDK bootstrap is needed..."
+          # Check if bootstrap stack exists
+          if ! aws cloudformation describe-stacks --stack-name CDKToolkit --region ${{ env.AWS_REGION }} > /dev/null 2>&1; then
+            echo "🚀 Running CDK bootstrap..."
+            cdk bootstrap aws://$(aws sts get-caller-identity --query Account --output text)/${{ env.AWS_REGION }}
+          else
+            echo "✅ CDK bootstrap already exists"
+          fi
+
+      - name: CDK Synth
+        working-directory: infrastructure
+        run: |
+          echo "🔄 Synthesizing CDK stack..."
+          cdk synth
+
+      - name: CDK Diff
+        working-directory: infrastructure
+        run: |
+          echo "📋 Showing deployment diff..."
+          cdk diff || true # Don't fail if there are differences
+
+      - name: CDK Deploy
+        working-directory: infrastructure
+        run: |
+          echo "🚀 Deploying to ECS..."
+          cdk deploy --require-approval never --verbose
+          echo "✅ Deployment completed successfully!"
+
+      - name: Get deployment outputs
+        working-directory: infrastructure
+        run: |
+          echo "📤 Getting deployment outputs..."
+          aws cloudformation describe-stacks \
+            --stack-name InfrastructureStack \
+            --region ${{ env.AWS_REGION }} \
+            --query 'Stacks[0].Outputs[*].{Key:OutputKey,Value:OutputValue,Description:Description}' \
+            --output table
+
+      - name: Health check
+        run: |
+          echo "🏥 Performing health check..."
+          # Get the load balancer URL from stack outputs
+          LB_URL=$(aws cloudformation describe-stacks \
+            --stack-name InfrastructureStack \
+            --region ${{ env.AWS_REGION }} \
+            --query 'Stacks[0].Outputs[?OutputKey==`LoadBalancerURL`].OutputValue' \
+            --output text)
+          
+          if [ ! -z "$LB_URL" ]; then
+            echo "🔗 Load Balancer URL: $LB_URL"
+            
+            # Wait a bit for the service to be ready
+            echo "⏳ Waiting 60 seconds for service to be ready..."
+            sleep 60
+            
+            # Try health check (with retries)
+            for i in {1..5}; do
+              echo "🔍 Health check attempt $i/5..."
+              if curl -f -s "$LB_URL/health" > /dev/null; then
+                echo "✅ Health check passed!"
+                break
+              else
+                echo "⚠️  Health check failed, retrying in 30 seconds..."
+                sleep 30
+              fi
+              
+              if [ $i -eq 5 ]; then
+                echo "❌ Health check failed after 5 attempts"
+                echo "🔍 Check ECS service status and logs in AWS Console"
+              fi
+            done
+          else
+            echo "⚠️  Could not retrieve Load Balancer URL"
+          fi
+
+      - name: Deployment summary
+        if: always()
+        run: |
+          echo "📊 Deployment Summary"
+          echo "===================="
+          echo "🌍 Region: ${{ env.AWS_REGION }}"
+          echo "🏗️  Stack: InfrastructureStack"
+          echo "📅 Deployed at: $(date)"
+          echo "🔗 GitHub SHA: ${{ github.sha }}"
+          echo "👤 Triggered by: ${{ github.actor }}"
+          
+          # Show ECS service status
+          echo ""
+          echo "🐳 ECS Service Status:"
+          aws ecs describe-services \
+            --cluster yaki-fastapi-cluster \
+            --services YakiFargateService \
+            --region ${{ env.AWS_REGION }} \
+            --query 'services[0].{Status:status,RunningCount:runningCount,DesiredCount:desiredCount,TaskDefinition:taskDefinition}' \
+            --output table || echo "Could not retrieve ECS service status" 
