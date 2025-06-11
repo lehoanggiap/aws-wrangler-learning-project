@@ -32,8 +32,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-          cache-dependency-path: infrastructure/package-lock.json
 
       - name: Set up Python for CDK
         uses: actions/setup-python@v4
