@@ -101,7 +101,7 @@ class InfrastructureStack(Stack):
             # Invalidate cache when source code changes
             invalidation=ecr_assets.DockerImageAssetInvalidationOptions(
                 build_args=True,
-                extra_hash=f"v1.0-{vcs_ref}"  # Include commit hash for unique builds
+                extra_hash=True  # Include commit hash for unique builds
             )
         )
 
