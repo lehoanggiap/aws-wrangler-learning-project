@@ -80,6 +80,8 @@ class InfrastructureStack(Stack):
             )
         )
 
+        docker_image_asset = ecr_assets.DockerImageAsset(self, 'YakiFastAPIImage', directory='../docker')
+
         # Create Fargate service with Application Load Balancer
         # This uses the NEW ASSET SYSTEM - publishes to default bootstrap repository
         fargate_service = ecs_patterns.ApplicationLoadBalancedFargateService(
@@ -91,7 +93,7 @@ class InfrastructureStack(Stack):
             task_image_options=ecs_patterns.ApplicationLoadBalancedTaskImageOptions(
                 # 🚀 NEW ASSET SYSTEM: This automatically publishes to the default ECR repository
                 # created during 'cdk bootstrap'. No repositoryName needed!
-                image=ecr_assets.DockerImageAsset(self, 'YakiFastAPIImage', directory='../../docker'),
+                image=ecs.ContainerImage.from_docker_image_asset(docker_image_asset),
                 container_port=8000,
                 task_role=task_role,
                 log_driver=ecs.LogDrivers.aws_logs(
@@ -113,8 +115,8 @@ class InfrastructureStack(Stack):
         fargate_service.target_group.configure_health_check(
             path="/health",
             healthy_http_codes="200",
-            health_check_interval=Duration.seconds(30),
-            health_check_timeout=Duration.seconds(10),
+            interval=Duration.seconds(30),
+            timeout=Duration.seconds(10),
             healthy_threshold_count=2,
             unhealthy_threshold_count=3
         )
