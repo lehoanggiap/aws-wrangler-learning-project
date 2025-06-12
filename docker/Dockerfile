@@ -2,6 +2,23 @@
 # Provides foundation with Python runtime and basic tools
 FROM python:3.11-slim
 
+# Build arguments for image metadata and tagging
+ARG BUILD_DATE
+ARG VCS_REF
+ARG VERSION
+
+# Add metadata labels to the image for better tracking and identification
+LABEL maintainer="Yaki Project Team" \
+      org.label-schema.build-date=$BUILD_DATE \
+      org.label-schema.name="yaki-fastapi" \
+      org.label-schema.description="FastAPI application for Yaki project with AWS Wrangler" \
+      org.label-schema.url="https://github.com/your-username/yaki-project" \
+      org.label-schema.vcs-ref=$VCS_REF \
+      org.label-schema.vcs-url="https://github.com/your-username/yaki-project" \
+      org.label-schema.vendor="Yaki Project" \
+      org.label-schema.version=$VERSION \
+      org.label-schema.schema-version="1.0"
+
 # Set /app as the working directory inside the container
 # All subsequent commands will run from this directory
 WORKDIR /app
@@ -10,11 +27,11 @@ WORKDIR /app
 # gcc & g++: C/C++ compilers needed for Python packages with native extensions
 # curl: Used for health checks and HTTP requests
 # Clean up package cache to reduce final image size
-RUN apt-get update && apt-get install -y \
-    gcc \
-    g++ \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
+# RUN apt-get update && apt-get install -y \
+#     gcc \
+#     g++ \
+#     curl \
+#     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements.txt first (before application code) for better Docker layer caching
 # If requirements don't change, this layer can be reused on subsequent builds
@@ -48,8 +65,8 @@ EXPOSE 8000
 # --start-period=5s: Wait 5 seconds before first check (app startup time)
 # --retries=3: Mark unhealthy after 3 consecutive failures
 # curl -f: Fails on HTTP error codes (4xx, 5xx), assumes /health endpoint exists
-HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+# HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
+#     CMD curl -f http://localhost:8000/health || exit 1
 
 # Start the FastAPI application using uvicorn ASGI server
 # uvicorn: Production-ready ASGI server for FastAPI

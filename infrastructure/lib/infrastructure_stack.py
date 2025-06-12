@@ -12,6 +12,7 @@ from aws_cdk import (
     aws_ecr_assets as ecr_assets,
 )
 from constructs import Construct
+import os
 
 
 class InfrastructureStack(Stack):
@@ -80,7 +81,29 @@ class InfrastructureStack(Stack):
             )
         )
 
-        docker_image_asset = ecr_assets.DockerImageAsset(self, 'YakiFastAPIImage', directory='../docker')
+        # Get build variables from environment (set by GitHub Actions)
+        build_date = os.environ.get('CDK_BUILD_DATE', 'unknown')
+        vcs_ref = os.environ.get('CDK_VCS_REF', 'unknown')
+        version = os.environ.get('CDK_VERSION', 'latest')
+
+        docker_image_asset = ecr_assets.DockerImageAsset(
+            self, 'YakiFastAPIImage', 
+            directory='..',  # Project root directory
+            file='docker/Dockerfile',  # Dockerfile path relative to directory
+            # Add build arguments for better image tracking
+            build_args={
+                "BUILD_DATE": build_date,
+                "VCS_REF": vcs_ref,
+                "VERSION": version
+            },
+            # Add platform specification for consistency
+            platform=ecr_assets.Platform.LINUX_AMD64,
+            # Invalidate cache when source code changes
+            invalidation=ecr_assets.DockerImageAssetInvalidationOptions(
+                build_args=True,
+                extra_hash=f"v1.0-{vcs_ref}"  # Include commit hash for unique builds
+            )
+        )
 
         # Create Fargate service with Application Load Balancer
         # This uses the NEW ASSET SYSTEM - publishes to default bootstrap repository
@@ -167,4 +190,18 @@ class InfrastructureStack(Stack):
             self, "TaskRoleARN",
             value=task_role.role_arn,
             description="ARN of the ECS task IAM role (provides AWS credentials automatically)"
+        )
+
+        # Output Docker Image Build Information
+        CfnOutput(
+            self, "ImageBuildInfo",
+            value=f"Version: {version} | Commit: {vcs_ref} | Built: {build_date}",
+            description="Docker image build information and metadata"
+        )
+
+        # Output Image Asset ID for tracking
+        CfnOutput(
+            self, "ImageAssetId",
+            value=docker_image_asset.asset_hash,
+            description="Docker image asset hash for tracking deployments"
         )
