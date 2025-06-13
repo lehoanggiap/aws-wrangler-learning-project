@@ -7,7 +7,7 @@ aws:
 s3_paths:
   news_data: "data/news/"
   news_parquet: "data/db/db_latest/df_all_news.parquet"
-  database_backup: "data/db/backup/users.sqlite"
+  db_backup: "data/db/backup/users.sqlite"
   models: "models/latest/"
 
 # Database Configuration
